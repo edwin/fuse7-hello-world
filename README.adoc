@@ -1,0 +1,109 @@
+## Simple HelloWorld REST api using Fuse7.2 BOM
+The projects build executable Spring Boot fat jar and also can be run in OpenShift.
+
+### Build and run locally 
+The Red Hat maven repos are configured in ../configuration/settings.xml Maven settings file. If you don't want to add the same repositories to your maven ~/.m2/settings.xml make sure to execute all the "mvn" commands below by adding:
+
+ mvn -s configuration/settings.xml [COMMANDS]
+
+Run locally:
+
+  mvn clean install
+  java -jar target/fuse7-hello-1.0-SNAPSHOT.jar
+
+Or with spring-boot-maven-plugin:
+
+  mvn spring-boot:run
+
+Try:
+
+  curl -k http://localhost:8080/api/hello
+  curl -k http://localhost:8080/api/hello/MyName
+
+### Build and run using MiniShift (or OpenShift) 
+*Deploy* to minishift (run only once):
+ 
+  oc project myproject
+  mvn fabric8:deploy -Pfabric8
+  curl -k http://fuse7-hello-myproject.192.168.99.100.nip.io/api/hello
+
+*Redeploy* to minishift (update deployment) :
+  
+  mvn clean install -Pfabric8
+  
+*Undeploy* from minishift:
+
+  mvn fabric8:undeploy 
+  
+or delete the deployed resources:
+
+  oc delete all -l=app=fuse7-hello
+
+### Prepare Minishift
+
+Download (min v3.7.0): https://developers.redhat.com/products/cdk/overview/
+
+  minishift setup-cdk
+  #This creates a ~/.minishift directory. You can always delete that to start from scratch.
+
+Use the link:https://docs.openshift.com/container-platform/3.11/release_notes/ocp_3_11_release_notes.html[latest] 3.11.x OpenShift version. Run _minishift delete_ to remove the VM and start with different parameters next time.
+
+  # To avoid "Checking if requested OpenShift version ... is valid ... FAIL"
+  minishift config set vm-driver virtualbox
+  minishift config set skip-check-openshift-release true
+  minishift config view
+  minishift addons disable anyuid
+  minishift start --memory 6GB --openshift-version 3.11.69
+
+  oc login -u system:admin
+  #Use admin/admin or developer/developer on console
+
+Add your Red Hat Devloper credentials for Fuse7 builder to enable download from registry.redhat.io.
+ 
+  oc login -u system:admin
+  oc project myproject
+  # This is how you can create the secret, but it may already be prepared by Minishift under the 'openshift' namespace:
+  # oc create secret docker-registry imagestreamsecret --docker-username=me@mycompany.com --docker-password=xxx --docker-server=registry.redhat.io
+  # Simply export/import the secret to your namespace:
+  oc get --export secret -o yaml -n openshift imagestreamsecret | oc create -f -
+  oc secrets link builder imagestreamsecret --for=pull,mount
+  
+You can verify that secret was added as Mountable secret:
+
+  $ oc describe sa builder
+  Name:                builder
+  Namespace:           myproject
+  Labels:              <none>
+  Annotations:         <none>
+  Image pull secrets:  builder-dockercfg-jrpl4
+                       imagestreamsecret
+  Mountable secrets:   builder-token-f2srd
+                       builder-dockercfg-jrpl4
+                       imagestreamsecret
+  Tokens:              builder-token-68dkx
+                       builder-token-f2srd 
+  Events:              <none>
+  
+Now the fabric8-maven-plugin should be abble to deploy the Fuse7 app in the _myproject_ namespace.
+
+### Jolokia
+
+If the "Open Jolokia Console" drops an authentication error, you can disable Jolokia authentication by adding these environment variables to the deployment:
+
+* AB_JOLOKIA_HTTPS=true
+* AB_JOLOKIA_AUTH_OPENSHIFT=false
+* AB_JOLOKIA_PASSWORD_RANDOM=false
+
+
+ sh-4.2$ cat /opt/jolokia/etc/jolokia.properties
+ host=*
+ port=8778
+ discoveryEnabled=false
+ protocol=https
+
+### Documentation
+
+ - Fuse on Openshift: https://access.redhat.com/documentation/en-us/red_hat_fuse/7.2/html-single/fuse_on_openshift_guide/
+ - All Fuse docs: https://access.redhat.com/documentation/en-us/red_hat_fuse/7.2/
+ - SpringBoot: https://docs.spring.io/spring-boot/docs/1.5.16.RELEASE/reference/htmlsingle/
+ - Camel Rest DSL: https://github.com/apache/camel/blob/master/camel-core/src/main/docs/rest-dsl.adoc
